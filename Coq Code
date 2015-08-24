@@ -1,0 +1,268 @@
+(* Set up *) 
+
+Require Import List.
+Notation " [ ] " := nil : list_scope.
+Notation " [ x ] " := (cons x nil) : list_scope.
+
+
+Variables
+A : Set.
+
+(*definition of sorted *)
+
+Inductive sorted (A:Set)(R:A->A->Prop) : list A -> Prop :=
+  | sorted0 : sorted A R nil
+  | sorted1 : forall x:A, sorted A R (cons x nil)
+  | sorted2 :
+      forall (x y:A)(l:list A),
+        R x y ->
+        sorted A R (cons y l)-> sorted A R (cons x (cons y l)).
+
+Implicit Arguments sorted [A].
+Hint Resolve sorted0 sorted1 sorted2 : sorted_base.
+
+(*definition of concatenation *)
+
+Fixpoint conc (l m:list nat) {struct l} : list nat :=
+  match l with
+  | nil => m
+  | a :: l1 => a :: conc l1 m
+  end.
+
+(*proof if x is less than y then a list containing only x and y is ordered *)
+
+Theorem xy_ord : forall x y : nat, le x y -> sorted le (x::y::nil).
+Proof.
+auto with sorted_base.
+Qed.
+
+(* proof if a list is ordered, it is still ordered if 0 is added at the beginning *)
+
+Theorem zero_cons_ord: forall l:list nat, sorted le l -> sorted le (cons 0 l).
+Proof.
+ induction l; auto with *.
+Qed.
+
+(* proof is a list is sorted then after removing the first element the remaining list is still sorted *) 
+
+Theorem sorted1_inv: forall (A:Set)(le:A->A->Prop)(x:A)(l:list A),
+                             sorted le (cons x l) -> sorted le l.
+Proof.
+intros.
+inversion H.
+apply sorted0.
+assumption.
+Qed.
+
+(* proof that is 2 elements, x and y, are sorted in a list then x must be less than y *)
+
+Theorem sorted2_inv :
+ forall (A:Set)(le: A-> A-> Prop)(x y:A)(l:list A),
+ sorted le (cons x (cons y l)) -> le x y.
+Proof.
+inversion 1; auto with sorted_base.
+Qed.
+
+Theorem exns : ~sorted le (1::3::2::nil).
+Proof.
+unfold not.
+intros.
+apply sorted1_inv in H.
+apply sorted2_inv in H.
+cut (le 2 3).
+intros.
+absurd (le 3 2).
+auto with arith.
+assumption.
+auto.
+Qed.
+
+(* proof that if a is greater than the last member of a sorted list then it may be added onn the end and sortedness is preserved *)
+
+Theorem gt_pres : forall a:nat, forall l : list nat, (sorted le l /\ (le (last l 0) a)) -> sorted le (conc l [a]).
+Proof.
+intros.
+destruct H.
+induction H; simpl; auto with sorted_base.
+Qed.
+
+(* pattern match that extracts first member of list followed by special case for natural number lists *) 
+
+Definition hd (A : Type) (default : A) (l : list A) 
+:=
+  match l with
+    | nil => default
+    | x :: _ => x
+  end.
+
+Definition first 
+:=
+  hd nat 0.
+
+(* proof is two lists are sorted and the smallest member of one list is larger than the largest 
+member of the other list then they can be concatenated and sortedness is preserved *)
+
+Theorem conc_sort :forall P Q : list nat, (sorted le P /\ sorted le Q /\ (le (last P 0) (first Q))) -> sorted le (app P Q).
+Proof.
+intros.
+destruct H.
+destruct H0.
+induction H; simpl; auto with sorted_base.  
+induction H0; simpl; auto with *.
+Qed.
+
+(* bool less than or equal to *) 
+Fixpoint leb (m n : nat) {struct m} : bool :=
+  match m with
+  | 0 => true
+  | S m => match n with 
+           | 0 => false
+           | S n => leb m n
+           end
+  end.
+
+(* proof is bool less than or equal returns true than less than equal holds *)
+
+Theorem leq1 : forall (m n : nat), leb m n = true <-> m <= n.
+Proof.
+induction m, n; auto with *.
+split.
+simpl.
+intros.
+discriminate.
+simpl.
+intros.
+inversion H.
+split. simpl. rewrite IHm. auto with *.
+simpl. rewrite IHm. auto with *.
+Qed.
+
+(*proof if m is not less than or equal to , then n must be less than or equal to m *)
+
+Theorem leq2 : forall m n : nat, leb m n = false -> leb n m = true. 
+Proof.
+induction m, n; auto with *.
+simpl.
+apply IHm.
+Qed.
+
+(* proof that if the number m and a list l form a sorted list this is equivalent to saying 
+that l is a sorted list and either m is less than the first member of l or l is empty*)
+
+
+Theorem sort_iff : forall m : nat, forall l : list nat, sorted le (m :: l) <-> ((le m (first l) \/ l = nil) /\ sorted le l).
+Proof.
+case l, m; auto with *; simpl.
+split.
+split.
+left.
+auto with *.
+apply sorted1_inv in H.
+assumption.
+intros.
+destruct H.
+apply zero_cons_ord.
+assumption.
+split.
+split.
+left.
+apply sorted2_inv in H.
+assumption.
+apply sorted1_inv in H.
+assumption.
+intros.
+destruct H.
+destruct H.
+auto with *.
+rewrite H.
+auto with *.
+Qed.
+
+
+(* function that inserts an element into a sorted list *)
+
+Fixpoint ins (x:nat)(l : list nat){struct l} : list nat :=
+match l with
+ |nil => x::nil
+ |m::l' => if leb x m
+           then x::l
+           else m::(ins x l')
+end.
+
+(* proof that the first member of the list l with m inserted will either be the first member of l or m *)
+
+Theorem ins1 : forall m : nat, forall l : list nat, first (ins m l) = m \/ first (ins m l) = first l.
+Proof.
+intros. 
+case l; simpl.
+left; trivial.
+intros.
+case leb; simpl.
+left.
+trivial.
+right.
+trivial.
+Qed.
+
+(* Proof that inserting a value into a sorted list preserves sortedness *)
+
+Theorem ins_sorted : forall x:nat, forall l : list nat, sorted le l -> sorted le (ins x l).
+Proof.
+intros.
+induction l; simpl.
+apply sorted1.
+case_eq (leb x a).
+intros.
+apply sort_iff in H.
+destruct H.
+apply sort_iff.
+simpl.
+split.
+left.
+apply leq1.
+assumption.
+apply sort_iff.
+split; assumption.
+intros.
+apply sort_iff.
+apply sort_iff in H.
+apply leq2 in H0.
+apply leq1 in H0.
+destruct H.
+split.
+left.
+destruct H.
+case (ins1 x l).
+intros.
+rewrite H2.
+assumption.
+intros.
+rewrite H2.
+assumption.
+rewrite H.
+simpl.
+assumption.
+apply IHl.
+assumption.
+Qed.
+
+(* function that sorts a non sorted list through insertion sorting *)
+
+Fixpoint ins_order (l: list nat) : list nat :=
+ match l with
+ |nil => nil
+ |m::l' => ins m (ins_order l')
+end.
+
+(* Proof ins_order works *) 
+
+Theorem sort_order : forall l : list nat, sorted le (ins_order l).
+Proof.
+induction l; simpl.
+apply sorted0.
+apply ins_sorted.
+assumption.
+Qed.
+
+
+Eval compute in ins_order  (1::3::2::nil).
